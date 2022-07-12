@@ -16,7 +16,6 @@ class PG(nn.Module):
             nn.ReLU(),
             nn.Linear(in_features = 64 , out_features = self.n_actions)
         )
-        self.optimizer = torch.optim.Adam(self.model.parameters(), 1e-3)
     def forward(self, x):
         logits = self.model(x)
         return logits

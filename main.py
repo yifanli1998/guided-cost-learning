@@ -153,7 +153,7 @@ for i in range(3000):
             probs * actions, dim=1)
     
         entropy = -torch.mean(torch.sum(probs*log_probs), dim = -1 )
-        loss_per_sample = -1 * (log_probs_for_actions*cumulative_returns + entropy * 1e-2)
+        loss_per_sample = -1 * (log_probs_for_actions*cumulative_returns - entropy * 1e-2)
         loss = torch.mean(loss_per_sample) + 1 
 
         # UPDATING THE POLICY NETWORK

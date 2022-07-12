@@ -15,6 +15,7 @@ class CostNN(nn.Module):
             # nn.Linear(hidden_dim1, hidden_dim2),
             # nn.ReLU(),
             nn.Linear(hidden_dim1, out_features),
+            # nn.Sigmoid()
         )
     def forward(self, x):
         return self.net(x)        

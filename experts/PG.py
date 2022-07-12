@@ -48,7 +48,7 @@ class PG(nn.Module):
             if done:
                 break
 
-        return states, actions, rewards
+        return states, actions, rewards, traj_probs
 
     def _get_cumulative_rewards(self, rewards, gamma=0.99):
         G = np.zeros_like(rewards, dtype = float)

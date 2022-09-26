@@ -8,11 +8,12 @@ from torch import nn
 from experts.PG import PG
 from cost import CostNN
 from utils import to_one_hot, get_cumulative_rewards
-from env import ModeEnv, get_optimal_action
+from dummy_env import DummyEnv, get_optimal_action
+from mode_env import ModeEnv
 
 from torch.optim.lr_scheduler import StepLR
 
-ENV_NAME = "cartpole"
+ENV_NAME = "mode"
 # SEEDS
 seed = 18095048
 random.seed(seed)
@@ -36,7 +37,10 @@ def preprocess_traj(traj_list, step_list, is_Demo=False):
             probs = np.ones((states.shape[0], 1))
         else:
             probs = np.array(traj[3]).reshape(-1, 1)
-        actions = to_one_hot_np(traj[1], N_ACTIONS)
+        if isinstance(traj[1], list) or len(traj[1].shape) < 2:
+            actions = to_one_hot_np(traj[1], N_ACTIONS)
+        else:
+            actions = traj[1]
         x = np.concatenate((states, probs, actions), axis=1)
         step_list.extend(x)
     return np.array(step_list)
@@ -50,10 +54,26 @@ if ENV_NAME == "cart":
         env.seed(seed)
     # LOADING EXPERT/DEMO SAMPLES
     demo_trajs = np.load('expert_samples/pg_cartpole.npy', allow_pickle=True)
-else:
-    env = ModeEnv()
+    ONEHOT = True
+elif ENV_NAME == "dummy":
+    env = DummyEnv()
     with open("expert_samples/pg_modeEnv.pkl", "rb") as outfile:
         demo_trajs = pickle.load(outfile)
+    ONEHOT = True
+    EPISODES_TO_PLAY = 20
+    REWARD_FUNCTION_UPDATE = 10
+    DEMO_BATCH = 100
+elif ENV_NAME == "mode":
+    env = ModeEnv()
+    with open("expert_samples/mobis.pkl", "rb") as outfile:
+        # loading trajectories, mean and std but mean and std are not used here
+        demo_trajs, _, _ = pickle.load(outfile)
+    ONEHOT = False
+    EPISODES_TO_PLAY = 1000
+    REWARD_FUNCTION_UPDATE = 10
+    DEMO_BATCH = 100
+else:
+    raise NotImplementedError("wrong environment")
 N_ACTIONS = env.nr_act  # action_space.n
 state_shape = env.nr_feats  # env.observation_space.shape
 state = env.reset()
@@ -70,9 +90,6 @@ cost_optimizer = torch.optim.Adam(cost_f.parameters(), 1e-3, weight_decay=1e-4)
 mean_rewards = []
 mean_costs = []
 mean_loss_rew = []
-EPISODES_TO_PLAY = 20
-REWARD_FUNCTION_UPDATE = 10
-DEMO_BATCH = 100
 
 D_demo, D_samp = np.array([]), np.array([])
 
@@ -190,16 +207,16 @@ for i in range(3000):
     if i % 10 == 0:
         if i % 100 == 0:
             print()
-            for ksl in range(5):
-                print(
-                    "action", "reward", "cost", "log_probs_action", "loss",
-                    "cum_returns"
-                )
-                print(
-                    actions[ksl], rewards[ksl], costs[ksl],
-                    log_probs_for_actions[ksl].item(),
-                    loss_per_sample[ksl].item()
-                )
+            # for ksl in range(5):
+            ksl = 0
+            print(
+                "action", "reward", "cost", "log_probs_action", "loss",
+                "cum_returns"
+            )
+            print(
+                actions[ksl], rewards[ksl], costs[ksl],
+                log_probs_for_actions[ksl].item(), loss_per_sample[ksl].item()
+            )
         # clear_output(True)
         print(
             f"Iter {i}: mean reward:{np.mean(return_list)} loss IOC: {loss_IOC} loss policy: {loss}"

@@ -14,7 +14,7 @@ def get_optimal_action(s):
     return action
 
 
-class ModeEnv:
+class DummyEnv:
 
     def __init__(self):
         self.nr_feats = 2
@@ -45,7 +45,7 @@ class ModeEnv:
 
 
 def sample_expert(nr_iters=1000, iters_per_epoch=20):
-    env = ModeEnv()
+    env = DummyEnv()
     traj_list = []
     for i in range(nr_iters):
         state = env.reset()

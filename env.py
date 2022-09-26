@@ -1,6 +1,6 @@
 import pickle
 import numpy as np
-import gym
+
 
 def get_optimal_action(s):
     if s[1] < 0.3:
@@ -13,35 +13,33 @@ def get_optimal_action(s):
         return 2
     return action
 
+
 class ModeEnv:
+
     def __init__(self):
         self.nr_feats = 2
         self.nr_act = 3
-        # self.action_space = gym.spaces.Box(low=np.zeros(nr_act), high=np.ones(nr_act))
-        self.action_space = gym.spaces.Discrete(self.nr_act)
-        self.observation_space = gym.spaces.Box(low=np.zeros(self.nr_feats), high=np.ones(self.nr_feats))
-        self.obs_size = self.observation_space.shape[0]
 
     def actind_to_action(self, actind):
         act = np.zeros(self.nr_act)
         act[actind] = 1
         return act
-    
+
     def reset(self):
-        self.state = np.random.rand(self.obs_size)
+        self.state = np.random.rand(self.nr_feats)
         self.wrong_counter = 0
         # self.state[:self.nr_feats] = np.random.rand(self.nr_feats)
         return self.state
 
     def step(self, actind):
         opt_act = get_optimal_action(self.state)
-        rew = 1 if opt_act == actind else 0 # -1 * np.linalg.norm(action - opt_act)
+        rew = 1 if opt_act == actind else 0  # -1 * np.linalg.norm(action - opt_act)
         if rew == 0:
             self.wrong_counter += 1
         action = self.actind_to_action(actind)
-        self.state = np.random.rand(self.obs_size)
+        self.state = np.random.rand(self.nr_feats)
         # basically a supervised task right now
-        # self.state[-self.nr_act:] = action 
+        # self.state[-self.nr_act:] = action
         done = self.wrong_counter >= 20
         return self.state, rew, done, {}
 
@@ -59,10 +57,11 @@ def sample_expert(nr_iters=1000, iters_per_epoch=20):
             # print(state, act)
             state, rew, _, _ = env.step(act)
             reward_list.append(rew)
-        
+
         traj_list.append([state_list, action_list, reward_list])
         # print(traj_list[-1])
     return traj_list
+
 
 if __name__ == "__main__":
     traj = sample_expert()

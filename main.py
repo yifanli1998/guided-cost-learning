@@ -1,4 +1,3 @@
-import gym
 import random
 import pickle
 import numpy as np
@@ -20,13 +19,15 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+
 def to_one_hot_np(x, ndim=3):
     out = np.zeros((len(x), ndim))
     out[np.arange(len(x)), x] = 1
     return out
 
+
 # CONVERTS TRAJ LIST TO STEP LIST
-def preprocess_traj(traj_list, step_list, is_Demo = False):
+def preprocess_traj(traj_list, step_list, is_Demo=False):
     """covert three arrays (x, 5), (x, 1), (x, 1) into one of shape (x,7)"""
     step_list = step_list.tolist()
     for traj in traj_list:
@@ -40,6 +41,7 @@ def preprocess_traj(traj_list, step_list, is_Demo = False):
         step_list.extend(x)
     return np.array(step_list)
 
+
 # ENV SETUP
 if ENV_NAME == "cart":
     env_name = 'CartPole-v0'
@@ -52,15 +54,15 @@ else:
     env = ModeEnv()
     with open("expert_samples/pg_modeEnv.pkl", "rb") as outfile:
         demo_trajs = pickle.load(outfile)
-N_ACTIONS = env.action_space.n
-state_shape = env.observation_space.shape
+N_ACTIONS = env.nr_act  # action_space.n
+state_shape = env.nr_feats  # env.observation_space.shape
 state = env.reset()
 
 print(len(demo_trajs))
 
 # INITILIZING POLICY AND REWARD FUNCTION
 policy = PG(state_shape, N_ACTIONS)
-cost_f = CostNN(state_shape[0] + N_ACTIONS)
+cost_f = CostNN(state_shape + N_ACTIONS)
 # changed both from lr e-2 to lower lr
 policy_optimizer = torch.optim.Adam(policy.parameters(), 1e-3)
 cost_optimizer = torch.optim.Adam(cost_f.parameters(), 1e-3, weight_decay=1e-4)
@@ -103,10 +105,14 @@ for i in range(3000):
         D_s_demo = D_demo[selected_demo]
 
         #D̂ samp ← D̂ demo ∪ D̂ samp
-        D_s_samp = np.concatenate((D_s_demo, D_s_samp), axis = 0)
+        D_s_samp = np.concatenate((D_s_demo, D_s_samp), axis=0)
 
-        states, probs, actions = D_s_samp[:,:-N_ACTIONS-1], D_s_samp[:,-N_ACTIONS-1], D_s_samp[:,-N_ACTIONS:]
-        states_expert, actions_expert = D_s_demo[:,:-N_ACTIONS-1], D_s_demo[:,-N_ACTIONS:]
+        states, probs, actions = D_s_samp[:, :-N_ACTIONS -
+                                          1], D_s_samp[:, -N_ACTIONS - 1
+                                                       ], D_s_samp[:,
+                                                                   -N_ACTIONS:]
+        states_expert, actions_expert = D_s_demo[:, :-N_ACTIONS -
+                                                 1], D_s_demo[:, -N_ACTIONS:]
 
         # Reducing from float64 to float32 for making computaton faster
         states = torch.tensor(states, dtype=torch.float32)
@@ -114,7 +120,7 @@ for i in range(3000):
         actions = torch.tensor(actions, dtype=torch.float32)
         states_expert = torch.tensor(states_expert, dtype=torch.float32)
         actions_expert = torch.tensor(actions_expert, dtype=torch.float32)
-        
+
         costs_samp = cost_f(torch.cat((states, actions), dim=-1))
         costs_demo = cost_f(torch.cat((states_expert, actions_expert), dim=-1))
 
@@ -132,15 +138,19 @@ for i in range(3000):
     for traj in trajs:
         states, actions, rewards, _ = traj
         actions = to_one_hot_np(actions, N_ACTIONS)
-        
+
         states = torch.tensor(states, dtype=torch.float32)
         actions = torch.tensor(actions, dtype=torch.float32)
-            
-        # get the estimated reward with the current cost function 
+
+        # get the estimated reward with the current cost function
         # PREV VERSION
         costs = cost_f(torch.cat((states, actions), dim=-1)).detach().numpy()
-        cumulative_returns = np.array(get_cumulative_rewards(-costs, 0.1 )) # 0.99)) TODO
-        cumulative_returns = torch.tensor(cumulative_returns, dtype=torch.float32).squeeze()
+        cumulative_returns = np.array(
+            get_cumulative_rewards(-costs, 0.1)
+        )  # 0.99)) TODO
+        cumulative_returns = torch.tensor(
+            cumulative_returns, dtype=torch.float32
+        ).squeeze()
 
         logits = policy(states)
         # get log probs for all possible actions
@@ -150,11 +160,15 @@ for i in range(3000):
         # get log probs for the action that was actually chosen
         log_probs_for_actions = torch.sum(
             # TODO: probs worked better than log_probs!
-            probs * actions, dim=1)
-    
-        entropy = -torch.mean(torch.sum(probs*log_probs), dim = -1 )
-        loss_per_sample = -1 * (log_probs_for_actions*cumulative_returns - entropy * 1e-2)
-        loss = torch.mean(loss_per_sample) + 1 
+            probs * actions,
+            dim=1
+        )
+
+        entropy = -torch.mean(torch.sum(probs * log_probs), dim=-1)
+        loss_per_sample = -1 * (
+            log_probs_for_actions * cumulative_returns - entropy * 1e-2
+        )
+        loss = torch.mean(loss_per_sample) + 1
 
         # UPDATING THE POLICY NETWORK
         if i > 200:
@@ -174,13 +188,22 @@ for i in range(3000):
 
     # PLOTTING PERFORMANCE
     if i % 10 == 0:
-        if i%100==0:
+        if i % 100 == 0:
             print()
             for ksl in range(5):
-                print("action", "reward", "cost", "log_probs_action", "loss", "cum_returns")
-                print(actions[ksl], rewards[ksl], costs[ksl], log_probs_for_actions[ksl].item(), loss_per_sample[ksl].item())
+                print(
+                    "action", "reward", "cost", "log_probs_action", "loss",
+                    "cum_returns"
+                )
+                print(
+                    actions[ksl], rewards[ksl], costs[ksl],
+                    log_probs_for_actions[ksl].item(),
+                    loss_per_sample[ksl].item()
+                )
         # clear_output(True)
-        print(f"Iter {i}: mean reward:{np.mean(return_list)} loss IOC: {loss_IOC} loss policy: {loss}")
+        print(
+            f"Iter {i}: mean reward:{np.mean(return_list)} loss IOC: {loss_IOC} loss policy: {loss}"
+        )
 
         plt.figure(figsize=[16, 12])
         plt.subplot(2, 2, 1)

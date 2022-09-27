@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 
 class CostNN(nn.Module):
     def __init__(
@@ -19,3 +20,9 @@ class CostNN(nn.Module):
         )
     def forward(self, x):
         return self.net(x)        
+    
+    def save_model(self, path):
+        torch.save(self.net.state_dict(), path)
+
+    def load_model(self, path):
+        self.net.load_state_dict(torch.load(path))

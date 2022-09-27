@@ -1,5 +1,8 @@
+import os
 import random
 import pickle
+import argparse
+from sys import dont_write_bytecode
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -13,9 +16,18 @@ from mode_env import ModeEnv
 
 from torch.optim.lr_scheduler import StepLR
 
-ENV_NAME = "mode"
+parser = argparse.ArgumentParser()
+parser.add_argument("-s", "--system", default="mode", type=str, help="environ")
+parser.add_argument("-e", "--epochs", default=2000, type=int, help="nr epochs")
+parser.add_argument("-p", "--plot", action="store_true", help="plot training?")
+parser.add_argument(
+    "-m", "--model", type=str, default="test", help="save name"
+)
+args = parser.parse_args()
+ENV_NAME = args.system
+
 # SEEDS
-seed = 18095048
+seed = 42
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -55,6 +67,7 @@ if ENV_NAME == "cart":
     # LOADING EXPERT/DEMO SAMPLES
     demo_trajs = np.load('expert_samples/pg_cartpole.npy', allow_pickle=True)
     ONEHOT = True
+    eval_env = env
 elif ENV_NAME == "dummy":
     env = DummyEnv()
     with open("expert_samples/pg_modeEnv.pkl", "rb") as outfile:
@@ -63,15 +76,17 @@ elif ENV_NAME == "dummy":
     EPISODES_TO_PLAY = 20
     REWARD_FUNCTION_UPDATE = 10
     DEMO_BATCH = 100
+    eval_env = env
 elif ENV_NAME == "mode":
-    env = ModeEnv()
-    with open("expert_samples/mobis.pkl", "rb") as outfile:
+    env = ModeEnv(os.path.join("expert_samples", "mobis_train.pkl"))
+    with open("expert_samples/mobis_train.pkl", "rb") as outfile:
         # loading trajectories, mean and std but mean and std are not used here
         demo_trajs, _, _ = pickle.load(outfile)
     ONEHOT = False
     EPISODES_TO_PLAY = 1000
     REWARD_FUNCTION_UPDATE = 10
     DEMO_BATCH = 100
+    eval_env = ModeEnv(os.path.join("expert_samples", "mobis_test.pkl"))
 else:
     raise NotImplementedError("wrong environment")
 N_ACTIONS = env.nr_act  # action_space.n
@@ -93,9 +108,12 @@ mean_loss_rew = []
 
 D_demo, D_samp = np.array([]), np.array([])
 
+os.makedirs("trained_models", exist_ok=True)
+os.makedirs(os.path.join("trained_models", args.model), exist_ok=True)
+
 D_demo = preprocess_traj(demo_trajs, D_demo, is_Demo=True)
 return_list, sum_of_cost_list = [], []
-for i in range(3000):
+for i in range(args.epochs):
     # t_max=50 in generate session in order to restrict steps per episode -
     # but won't help here because of random factor
     trajs = [policy.generate_session(env) for _ in range(EPISODES_TO_PLAY)]
@@ -105,7 +123,8 @@ for i in range(3000):
     # if i==1 or i==100:
     #     for traj in trajs[:10]:
     #         states = torch.tensor(traj[0], dtype=torch.float32)
-    #         actions = torch.tensor(to_one_hot_np(traj[1], N_ACTIONS), dtype=torch.float32)
+    #         actions = torch.tensor(to_one_hot_np(traj[1], N_ACTIONS)
+    #               , dtype=torch.float32)
     #         print(states.size(), actions.size())
     #         with torch.no_grad():
     #             costs = cost_f(torch.cat((states, actions), dim=-1))
@@ -203,44 +222,69 @@ for i in range(3000):
     mean_costs.append(np.mean(sum_of_cost_list))
     mean_loss_rew.append(np.mean(loss_rew))
 
-    # PLOTTING PERFORMANCE
+    # EVAL PERFORMANCE
     if i % 10 == 0:
         if i % 100 == 0:
             print()
             # for ksl in range(5):
             ksl = 0
             print(
-                "action", "reward", "cost", "log_probs_action", "loss",
-                "cum_returns"
+                "action:", actions[ksl], ", reward:", rewards[ksl], "cost:",
+                costs[ksl], "log probs act:", log_probs_for_actions[ksl].item()
             )
+
+        # evaluation on test data
+        if env == eval_env:
             print(
-                actions[ksl], rewards[ksl], costs[ksl],
-                log_probs_for_actions[ksl].item(), loss_per_sample[ksl].item()
+                f"Iter {i}: mean reward:{round(np.mean(return_list), 2)}\
+                 loss IOC: {round(loss_IOC.item(), 2)}\
+                  loss policy: {round(loss.item(), 2)}"
             )
-        # clear_output(True)
+            continue
+        rew, max_rew = 0, 0
+        for eval_epoch in range(30):
+            s = eval_env.reset()
+            # 20 is much higher than the possible steps in mode env
+            for k in range(20):
+                action_probs = policy.predict_probs(np.array([s]))[0]
+                a = np.random.choice(policy.n_actions, p=action_probs)
+                s, r, done, info = eval_env.step(a)
+                rew += r
+                if done:
+                    break
+            max_rew += (k + 1)
         print(
-            f"Iter {i}: mean reward:{np.mean(return_list)} loss IOC: {loss_IOC} loss policy: {loss}"
+            f"Iter {i}: Reward:{round(np.mean(return_list), 2)}\
+    loss IOC: {round(loss_IOC.item(), 2)}\
+    loss policy: {round(loss.item(), 2)}\
+    Test reward: {rew} / {max_rew}, {round(rew/max_rew, 2)}"
         )
 
-        plt.figure(figsize=[16, 12])
-        plt.subplot(2, 2, 1)
-        plt.title(f"Mean reward per {EPISODES_TO_PLAY} games")
-        plt.plot(mean_rewards)
-        plt.grid()
+        # model saving
+        policy.save_model(os.path.join("trained_models", args.model, "policy"))
+        policy.save_model(os.path.join("trained_models", args.model, "costs"))
 
-        plt.subplot(2, 2, 2)
-        plt.title(f"Mean cost per {EPISODES_TO_PLAY} games")
-        plt.plot(mean_costs)
-        plt.grid()
+        if args.plot:
+            plt.figure(figsize=[16, 12])
+            plt.subplot(2, 2, 1)
+            plt.title(f"Mean reward per {EPISODES_TO_PLAY} games")
+            plt.plot(mean_rewards)
+            plt.grid()
 
-        plt.subplot(2, 2, 3)
-        plt.title(f"Mean loss per {REWARD_FUNCTION_UPDATE} batches")
-        plt.plot(mean_loss_rew)
-        plt.grid()
+            plt.subplot(2, 2, 2)
+            plt.title(f"Mean cost per {EPISODES_TO_PLAY} games")
+            plt.plot(mean_costs)
+            plt.grid()
 
-        # plt.show()
-        plt.savefig('plots/GCL_learning_curve.png')
-        plt.close()
+            plt.subplot(2, 2, 3)
+            plt.title(f"Mean loss per {REWARD_FUNCTION_UPDATE} batches")
+            plt.plot(mean_loss_rew)
+            plt.grid()
 
-    if np.mean(return_list) > 500:
-        break
+            # plt.show()
+            plt.savefig(
+                os.path.join(
+                    "trained_models", args.model, 'GCL_learning_curve.png'
+                )
+            )
+            plt.close()

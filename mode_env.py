@@ -73,7 +73,9 @@ def prepare_data(
 
 class ModeEnv:
 
-    def __init__(self, path_traj=os.path.join("expert_samples", "mobis.pkl")):
+    def __init__(
+        self, path_traj=os.path.join("expert_samples", "mobis_train.pkl")
+    ):
         # load trajectories --> this is the only data we have
         with open(path_traj, "rb") as outfile:
             (self.traj_list, feat_mean, feat_std) = pickle.load(outfile)
@@ -116,5 +118,20 @@ class ModeEnv:
 if __name__ == "__main__":
     trips = pd.read_csv("../../data/mobis/trips_features.csv")
     traj_list, (feat_mean, feat_std) = prepare_data(trips)
-    with open(os.path.join("expert_samples", "mobis.pkl"), "wb") as outfile:
-        pickle.dump((traj_list, feat_mean, feat_std), outfile)
+
+    # split in train and test
+    nr_data = len(traj_list)
+    cutoff = int(nr_data * 0.9)
+    traj_list_train = traj_list[:cutoff]
+    traj_list_test = traj_list[cutoff:]
+
+    # save train and test
+    with open(
+        os.path.join("expert_samples", "mobis_train.pkl"), "wb"
+    ) as outfile:
+        pickle.dump((traj_list_train, feat_mean, feat_std), outfile)
+
+    with open(
+        os.path.join("expert_samples", "mobis_test.pkl"), "wb"
+    ) as outfile:
+        pickle.dump((traj_list_test, feat_mean, feat_std), outfile)

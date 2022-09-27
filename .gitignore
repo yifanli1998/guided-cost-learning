@@ -3,3 +3,5 @@ __pycache__/
 *.pkl
 *.png
 .DS_Store
+
+trained_models/

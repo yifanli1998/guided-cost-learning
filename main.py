@@ -1,5 +1,7 @@
 import os
 import random
+import json
+import pandas as pd
 import pickle
 import argparse
 from sys import dont_write_bytecode
@@ -23,8 +25,15 @@ parser.add_argument("-p", "--plot", action="store_true", help="plot training?")
 parser.add_argument(
     "-m", "--model", type=str, default="test", help="save name"
 )
+parser.add_argument(
+    "-l", "--load_from", type=str, default=None, help="load pretrained model"
+)
+parser.add_argument("-t", "--target_entropy", action="store_true")
+parser.add_argument("-f", "--entropy_factor", type=float, default=1e-2)
 args = parser.parse_args()
 ENV_NAME = args.system
+USE_TARGET_ENTROPY = args.target_entropy
+ENTROPY_FACTOR = args.entropy_factor
 
 # SEEDS
 seed = 42
@@ -95,27 +104,38 @@ N_ACTIONS = env.nr_act  # action_space.n
 state_shape = env.nr_feats  # env.observation_space.shape
 state = env.reset()
 
-print(len(demo_trajs))
+print("number of expert trajectories:", len(demo_trajs))
+print(f"Using target entropy: {USE_TARGET_ENTROPY} which is {env.entropy}")
 
 # INITILIZING POLICY AND REWARD FUNCTION
 policy = PG(state_shape, N_ACTIONS)
 cost_f = CostNN(state_shape + N_ACTIONS)
+if args.load_from is not None:
+    policy.load_model(os.path.join("trained_models", args.load_from, "policy"))
+    cost_f.load_model(os.path.join("trained_models", args.load_from, "costs"))
+
 # changed both from lr e-2 to lower lr
 policy_optimizer = torch.optim.Adam(policy.parameters(), 1e-3)
 cost_optimizer = torch.optim.Adam(cost_f.parameters(), 1e-3, weight_decay=1e-4)
 
 mean_rewards = []
-mean_costs = []
-mean_loss_rew = []
+mean_entropy = []
 
 D_demo, D_samp = np.array([]), np.array([])
 
 os.makedirs("trained_models", exist_ok=True)
 os.makedirs(os.path.join("trained_models", args.model), exist_ok=True)
 
+# Save config
+config = vars(args)
+with open(os.path.join("trained_models", args.model, "config.json"), "w") as f:
+    json.dump(config, f)
+
 D_demo = preprocess_traj(demo_trajs, D_demo, is_Demo=True)
 return_list, sum_of_cost_list = [], []
 for i in range(args.epochs):
+    sum_of_cost = 0
+
     # t_max=50 in generate session in order to restrict steps per episode -
     # but won't help here because of random factor
     trajs = [policy.generate_session(env) for _ in range(EPISODES_TO_PLAY)]
@@ -201,10 +221,18 @@ for i in range(args.epochs):
             dim=1
         )
 
-        entropy = -torch.mean(torch.sum(probs * log_probs), dim=-1)
-        loss_per_sample = -1 * (
-            log_probs_for_actions * cumulative_returns + entropy * 1e-2
-        )
+        entropy = torch.mean(-1 * torch.sum(probs * log_probs, dim=-1))
+        if USE_TARGET_ENTROPY:
+            loss_per_sample = -1 * (
+                log_probs_for_actions * cumulative_returns -
+                (entropy - env.entropy)**2 * ENTROPY_FACTOR
+            )
+        else:
+            # simply maximzie the entropy with an additional factor
+            loss_per_sample = -1 * (
+                log_probs_for_actions * cumulative_returns +
+                entropy * ENTROPY_FACTOR
+            )
         loss = torch.mean(loss_per_sample) + 1
 
         # UPDATING THE POLICY NETWORK
@@ -214,49 +242,19 @@ for i in range(args.epochs):
             loss.backward()
             policy_optimizer.step()
 
-    returns = sum(rewards)
-    sum_of_cost = np.sum(costs)
-    return_list.append(returns)
+        sum_of_cost += np.sum(costs)
     sum_of_cost_list.append(sum_of_cost)
 
-    mean_rewards.append(np.mean(return_list))
-    mean_costs.append(np.mean(sum_of_cost_list))
-    mean_loss_rew.append(np.mean(loss_rew))
-
-    # EVAL PERFORMANCE
+    # EVAL AND SAVING
     if i % 10 == 0:
-        if i % 100 == 0:
-            print()
-            # for ksl in range(5):
-            ksl = 0
-            print(
-                "action:", np.argmax(actions[ksl]), ", reward:", rewards[ksl],
-                "cost:", costs[ksl], "log probs act:",
-                log_probs_for_actions[ksl].item()
-            )
-            # model saving (each 100 epochs save properly)
-            policy.save_model(
-                os.path.join("trained_models", args.model, f"policy_{i}")
-            )
-            cost_f.save_model(
-                os.path.join("trained_models", args.model, f"costs_{i}")
-            )
-
-        # evaluation on test data
-        if env == eval_env:
-            print(
-                f"Iter {i}: mean reward:{round(np.mean(return_list), 2)}\
-                 loss IOC: {round(loss_IOC.item(), 2)}\
-                  loss policy: {round(loss.item(), 2)}"
-            )
-            continue
+        # evaluate performance
         rew, max_rew, entropy_list = 0, 0, []
         for eval_epoch in range(30):
             s = eval_env.reset()
             # 20 is much higher than the possible steps in mode env
             for k in range(20):
                 action_probs = policy.predict_probs(np.array([s]))[0]
-                log_probs = np.log(action_probs)
+                log_probs = np.log(action_probs + 1e-7)
                 entropy_list.append(-(np.sum(action_probs * log_probs)))
                 a = np.random.choice(policy.n_actions, p=action_probs)
                 s, r, done, info = eval_env.step(a)
@@ -265,38 +263,34 @@ for i in range(args.epochs):
                     break
             max_rew += (k + 1)
         print(
-            f"Iter {i}: Reward:{round(np.mean(return_list), 2)}\
-    loss IOC: {round(loss_IOC.item(), 2)}\
+            f"Iter {i}: loss IOC: {round(loss_IOC.item(), 2)}\
     loss policy: {round(loss.item(), 2)}\
-    Entropy: {round(np.mean(entropy_list), 2)}\
+    Entropy: {round(sum(list(entropy_list))/len(entropy_list), 2)}\
     Test reward: {rew} / {max_rew}, {round(rew/max_rew, 2)}"
         )
+        mean_rewards.append(rew / max_rew)
+        mean_entropy.append(np.mean(entropy_list))
 
-        # model saving
-        policy.save_model(os.path.join("trained_models", args.model, "policy"))
-        cost_f.save_model(os.path.join("trained_models", args.model, "costs"))
-
-        if args.plot:
-            plt.figure(figsize=[16, 12])
-            plt.subplot(2, 2, 1)
-            plt.title(f"Mean reward per {EPISODES_TO_PLAY} games")
-            plt.plot(mean_rewards)
-            plt.grid()
-
-            plt.subplot(2, 2, 2)
-            plt.title(f"Mean cost per {EPISODES_TO_PLAY} games")
-            plt.plot(mean_costs)
-            plt.grid()
-
-            plt.subplot(2, 2, 3)
-            plt.title(f"Mean loss per {REWARD_FUNCTION_UPDATE} batches")
-            plt.plot(mean_loss_rew)
-            plt.grid()
-
-            # plt.show()
-            plt.savefig(
-                os.path.join(
-                    "trained_models", args.model, 'GCL_learning_curve.png'
-                )
+        if i % 100 == 0:
+            print()
+            # model saving (each 100 epochs save properly)
+            policy.save_model(
+                os.path.join("trained_models", args.model, f"policy_{i}")
             )
-            plt.close()
+            cost_f.save_model(
+                os.path.join("trained_models", args.model, f"costs_{i}")
+            )
+            # results saving:
+            df = pd.DataFrame()
+            df["entropy"] = mean_entropy
+            df["rewards"] = mean_rewards
+            df["epoch"] = np.arange(0, i + 1, 10)
+            df.to_csv(os.path.join("trained_models", args.model, "res.csv"))
+
+            # # print out one example
+            # ksl = 0
+            # print(
+            #     "action:", np.argmax(actions[ksl]), ", reward:", rewards[ksl],
+            #     "cost:", costs[ksl], "log probs act:",
+            #     log_probs_for_actions[ksl].item()
+            # )

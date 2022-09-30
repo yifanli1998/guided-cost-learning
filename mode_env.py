@@ -89,6 +89,14 @@ class ModeEnv:
         self.current_traj = self.traj_list[self.traj_order[self.current_ind]]
         # TODO: possibly normalize the reward such that the rewards of one
         # episode sum up to 1
+        self.compute_entropy()
+
+    def compute_entropy(self):
+        all_actions = [act for traj in self.traj_list for act in traj[1]]
+        all_actions = np.argmax(np.array(all_actions), axis=1)
+        _, counts = np.unique(all_actions, return_counts=True)
+        probs = counts / np.sum(counts)
+        self.entropy = -1 * np.sum(probs * np.log(probs))
 
     def reset(self):
         self.current_ind = (self.current_ind + 1) % self.nr_traj

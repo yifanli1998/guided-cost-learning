@@ -229,8 +229,16 @@ for i in range(args.epochs):
             # for ksl in range(5):
             ksl = 0
             print(
-                "action:", actions[ksl], ", reward:", rewards[ksl], "cost:",
-                costs[ksl], "log probs act:", log_probs_for_actions[ksl].item()
+                "action:", np.argmax(actions[ksl]), ", reward:", rewards[ksl],
+                "cost:", costs[ksl], "log probs act:",
+                log_probs_for_actions[ksl].item()
+            )
+            # model saving (each 100 epochs save properly)
+            policy.save_model(
+                os.path.join("trained_models", args.model, f"policy_{i}")
+            )
+            cost_f.save_model(
+                os.path.join("trained_models", args.model, f"costs_{i}")
             )
 
         # evaluation on test data
@@ -262,7 +270,7 @@ for i in range(args.epochs):
 
         # model saving
         policy.save_model(os.path.join("trained_models", args.model, "policy"))
-        policy.save_model(os.path.join("trained_models", args.model, "costs"))
+        cost_f.save_model(os.path.join("trained_models", args.model, "costs"))
 
         if args.plot:
             plt.figure(figsize=[16, 12])

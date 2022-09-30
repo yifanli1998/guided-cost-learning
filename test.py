@@ -24,13 +24,14 @@ if __name__ == "__main__":
 
     # INITILIZING POLICY AND REWARD FUNCTION
     policy = PG(state_shape, N_ACTIONS)
-    cost_f = CostNN(state_shape + N_ACTIONS)
     policy.load_model(
         os.path.join("trained_models", model, f"policy_{args.epoch}")
     )
-    cost_f.load_model(
-        os.path.join("trained_models", model, f"costs_{args.epoch}")
-    )
+    # # cost network (not needed)
+    # cost_f = CostNN(state_shape + N_ACTIONS)
+    # cost_f.load_model(
+    #     os.path.join("trained_models", model, f"costs_{args.epoch}")
+    # )
 
     rew, max_rew = 0, 0
     act_sim, act_real = [], []

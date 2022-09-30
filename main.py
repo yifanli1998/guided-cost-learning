@@ -50,8 +50,10 @@ def preprocess_traj(traj_list, step_list, is_Demo=False):
         else:
             probs = np.array(traj[3]).reshape(-1, 1)
         if isinstance(traj[1], list) or len(traj[1].shape) < 2:
+            # sampled trajectories: are not one hot
             actions = to_one_hot_np(traj[1], N_ACTIONS)
         else:
+            # expert trajectories: one hot
             actions = traj[1]
         x = np.concatenate((states, probs, actions), axis=1)
         step_list.extend(x)
@@ -179,7 +181,6 @@ for i in range(args.epochs):
         actions = torch.tensor(actions, dtype=torch.float32)
 
         # get the estimated reward with the current cost function
-        # PREV VERSION
         costs = cost_f(torch.cat((states, actions), dim=-1)).detach().numpy()
         cumulative_returns = np.array(
             get_cumulative_rewards(-costs, 0.1)
@@ -249,12 +250,14 @@ for i in range(args.epochs):
                   loss policy: {round(loss.item(), 2)}"
             )
             continue
-        rew, max_rew = 0, 0
+        rew, max_rew, entropy_list = 0, 0, []
         for eval_epoch in range(30):
             s = eval_env.reset()
             # 20 is much higher than the possible steps in mode env
             for k in range(20):
                 action_probs = policy.predict_probs(np.array([s]))[0]
+                log_probs = np.log(action_probs)
+                entropy_list.append(-(np.sum(action_probs * log_probs)))
                 a = np.random.choice(policy.n_actions, p=action_probs)
                 s, r, done, info = eval_env.step(a)
                 rew += r
@@ -265,6 +268,7 @@ for i in range(args.epochs):
             f"Iter {i}: Reward:{round(np.mean(return_list), 2)}\
     loss IOC: {round(loss_IOC.item(), 2)}\
     loss policy: {round(loss.item(), 2)}\
+    Entropy: {round(np.mean(entropy_list), 2)}\
     Test reward: {rew} / {max_rew}, {round(rew/max_rew, 2)}"
         )
 

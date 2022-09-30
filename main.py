@@ -202,7 +202,7 @@ for i in range(args.epochs):
 
         entropy = -torch.mean(torch.sum(probs * log_probs), dim=-1)
         loss_per_sample = -1 * (
-            log_probs_for_actions * cumulative_returns - entropy * 1e-2
+            log_probs_for_actions * cumulative_returns + entropy * 1e-2
         )
         loss = torch.mean(loss_per_sample) + 1
 

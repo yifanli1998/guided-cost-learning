@@ -95,7 +95,11 @@ class ModeEnv:
         all_actions = [act for traj in self.traj_list for act in traj[1]]
         all_actions = np.argmax(np.array(all_actions), axis=1)
         _, counts = np.unique(all_actions, return_counts=True)
+        assert len(
+            counts
+        ) == self.nr_act, "in train data there are not all actions"
         probs = counts / np.sum(counts)
+        self.dist_labels = counts
         self.entropy = -1 * np.sum(probs * np.log(probs))
 
     def reset(self):

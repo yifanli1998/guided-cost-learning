@@ -8,7 +8,11 @@ from cost import CostNN
 from mode_env import ModeEnv
 from utils import chi_square
 
-from v2g4carsharing.mode_choice_model.evaluate import mode_share_plot
+try:
+    from v2g4carsharing.mode_choice_model.evaluate import mode_share_plot
+except:
+    print("v2g4carsharing module not available, pass import")
+    pass
 
 
 # evaluate performance

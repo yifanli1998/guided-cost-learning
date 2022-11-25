@@ -2,10 +2,11 @@ import numpy as np
 import os
 import pandas as pd
 import argparse
+import json
 
 from experts.PG import PG
 from cost import CostNN
-from mode_env import ModeEnv
+from mode_env import ModeEnv, included_modes
 from utils import chi_square
 
 try:
@@ -55,10 +56,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "-m", "--model", type=str, default="test", help="save name"
     )
+    parser.add_argument("--use_prev_mode", action="store_true")
     args = parser.parse_args()
 
     model = args.model
-    eval_env = ModeEnv(os.path.join("expert_samples", "mobis_test.pkl"))
+    eval_env = ModeEnv(data="test", use_prevmode=args.use_prev_mode)
     N_ACTIONS = eval_env.nr_act  # action_space.n
     state_shape = eval_env.nr_feats  # env.observation_space.shape
 
@@ -82,13 +84,7 @@ if __name__ == "__main__":
     print(f"Test reward: {rew} / {max_rew}, {round(rew/max_rew, 2)}")
 
     # make plot
-    included_modes = np.array(
-        [
-            'Mode::Bicycle', 'Mode::Bus', 'Mode::Car',
-            'Mode::CarsharingMobility', 'Mode::LightRail',
-            'Mode::RegionalTrain', 'Mode::Train', 'Mode::Tram', 'Mode::Walk'
-        ]
-    )
+    included_modes = np.array(included_modes)
     # chi square
     print("chi square stats:", chi_square(act_real, act_sim, N_ACTIONS))
 

@@ -28,6 +28,8 @@ parser.add_argument(
     "-l", "--load_from", type=str, default=None, help="load pretrained model"
 )
 parser.add_argument("-t", "--target_entropy", action="store_true")
+parser.add_argument("--soft_reward", action="store_true")
+parser.add_argument("--use_prev_mode", action="store_true")
 parser.add_argument("-f", "--entropy_factor", type=float, default=1e-2)
 parser.add_argument("-c", "--cumulative", type=float, default=0.1)
 args = parser.parse_args()
@@ -61,15 +63,25 @@ elif ENV_NAME == "dummy":
     DEMO_BATCH = 100
     eval_env = env
 elif ENV_NAME == "mode":
-    env = ModeEnv(os.path.join("expert_samples", "mobis_train.pkl"))
-    with open("expert_samples/mobis_train.pkl", "rb") as outfile:
+    env = ModeEnv(
+        data="train",
+        use_prevmode=args.use_prev_mode,
+        soft_reward=args.soft_reward
+    )
+    data_name = "prevmode" if args.use_prev_mode else "noprevmode"
+    path_data = os.path.join("expert_samples", data_name, "mobis_train.pkl")
+    with open(path_data, "rb") as outfile:
         # loading trajectories, mean and std but mean and std are not used here
         demo_trajs, _, _ = pickle.load(outfile)
     ONEHOT = False
     EPISODES_TO_PLAY = 1000
     REWARD_FUNCTION_UPDATE = 10
     DEMO_BATCH = 100
-    eval_env = ModeEnv(os.path.join("expert_samples", "mobis_test.pkl"))
+    eval_env = ModeEnv(
+        data="test",
+        use_prevmode=args.use_prev_mode,
+        soft_reward=args.soft_reward
+    )
 else:
     raise NotImplementedError("wrong environment")
 N_ACTIONS = env.nr_act  # action_space.n

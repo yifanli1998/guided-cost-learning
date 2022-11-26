@@ -245,7 +245,7 @@ for i in range(args.epochs):
             )
 
             # make big eval:
-            _, _, _, act_real, act_sim = eval_performance(
+            _, _, _, act_sim, act_real = eval_performance(
                 eval_env, policy, iters=eval_env.nr_traj, return_act=True
             )
             car_sharing_dict[i] = np.sum(np.array(act_sim) == 3) / len(act_sim)

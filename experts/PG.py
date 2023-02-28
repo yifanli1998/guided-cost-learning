@@ -14,6 +14,7 @@ class PG(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(in_features=state_shape, out_features=128), nn.ReLU(),
             nn.Linear(in_features=128, out_features=64), nn.ReLU(),
+            nn.BatchNorm1d(64),
             nn.Linear(in_features=64, out_features=self.n_actions)
         )
 

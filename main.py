@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 import torch
 from torch import nn
+from collections import Counter
 
 from experts.PG import PG
 from cost import CostNN
@@ -126,7 +127,9 @@ for i in range(args.epochs):
 
     # t_max=50 in generate session in order to restrict steps per episode -
     # but won't help here because of random factor
+    policy.model.eval()
     trajs = [policy.generate_session(env) for _ in range(EPISODES_TO_PLAY)]
+    policy.model.train()
     D_samp = preprocess_traj(trajs, D_samp, N_ACTIONS)
 
     # UPDATING REWARD FUNCTION (TAKES IN D_samp, D_demo)
@@ -172,6 +175,8 @@ for i in range(args.epochs):
     # train policy
     for traj in trajs:
         states, actions, rewards, _ = traj
+        if len(states) < 2:
+            continue
         actions = to_one_hot_np(actions, N_ACTIONS)
 
         states = torch.tensor(states, dtype=torch.float32)
@@ -224,6 +229,7 @@ for i in range(args.epochs):
 
     # EVAL AND SAVING
     if i % 10 == 0:
+        policy.model.eval()
         rew, max_rew, eval_entropy = eval_performance(eval_env, policy, 30)
         print(
             f"Iter {i}: loss IOC: {round(loss_IOC.item(), 2)}\
@@ -248,6 +254,7 @@ for i in range(args.epochs):
             _, _, _, act_sim, act_real = eval_performance(
                 eval_env, policy, iters=eval_env.nr_traj, return_act=True
             )
+            print(Counter(act_sim))
             car_sharing_dict[i] = np.sum(np.array(act_sim) == 3) / len(act_sim)
             acc = np.sum(act_real == act_sim) / len(act_real)
             chi_square_res = chi_square(act_real, act_sim, N_ACTIONS)
@@ -277,3 +284,4 @@ for i in range(args.epochs):
             #     "cost:", costs[ksl], "log probs act:",
             #     log_probs_for_actions[ksl].item()
             # )
+        policy.model.train()

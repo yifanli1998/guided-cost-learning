@@ -3,11 +3,13 @@ import os
 import pandas as pd
 import argparse
 import json
+import sys
 
 from experts.PG import PG
 from cost import CostNN
 from mode_env import ModeEnv, included_modes
 from utils import chi_square
+from sklearn.metrics import accuracy_score, balanced_accuracy_score
 
 try:
     from v2g4carsharing.mode_choice_model.evaluate import mode_share_plot
@@ -57,12 +59,21 @@ if __name__ == "__main__":
         "-m", "--model", type=str, default="test", help="save name"
     )
     parser.add_argument("--use_prev_mode", action="store_true")
+    parser.add_argument("--tofile", action="store_true")
     args = parser.parse_args()
 
     model = args.model
     eval_env = ModeEnv(data="test", use_prevmode=args.use_prev_mode)
     N_ACTIONS = eval_env.nr_act  # action_space.n
     state_shape = eval_env.nr_feats  # env.observation_space.shape
+
+    if args.tofile:
+        f = open(
+            os.path.join(
+                os.path.join("trained_models", model), "evaluation.txt"
+            ), "w"
+        )
+        sys.stdout = f
 
     # INITILIZING POLICY AND REWARD FUNCTION
     policy = PG(state_shape, N_ACTIONS)
@@ -91,7 +102,10 @@ if __name__ == "__main__":
     # mode share plot:
     act_real = included_modes[act_real]
     act_sim = included_modes[act_sim]
-    print("Accuracy:", np.sum(act_real == act_sim) / len(act_real))
+    print("Acc:", accuracy_score(act_real, act_sim))
+    print("Balanced Acc:", balanced_accuracy_score(act_real, act_sim))
     mode_share_plot(
         act_real, act_sim, out_path=os.path.join("trained_models", model)
     )
+    if args.tofile:
+        f.close()

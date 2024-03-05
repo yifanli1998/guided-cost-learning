@@ -13,7 +13,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-env_name = 'CartPole-v1'
+env_name = 'CartPole-v0'
 env = gym.make(env_name).unwrapped
 if seed is not None:
     env.seed(seed)

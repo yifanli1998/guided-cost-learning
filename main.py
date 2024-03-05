@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/Users/liyifan/miniforge3/lib/python3.9/site-packages')
 import gym
 import random
 import pickle
@@ -5,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
+import os
 
 from experts.PG import PG
 from cost import CostNN
@@ -13,12 +16,13 @@ from env import ModeEnv, get_optimal_action
 
 from torch.optim.lr_scheduler import StepLR
 
-ENV_NAME = "cartpole"
+ENV_NAME = "cart"
 # SEEDS
 seed = 18095048
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+nIteraions = 2000
 
 def to_one_hot_np(x, ndim=3):
     out = np.zeros((len(x), ndim))
@@ -45,7 +49,7 @@ if ENV_NAME == "cart":
     env_name = 'CartPole-v0'
     env = gym.make(env_name).unwrapped
     if seed is not None:
-        env.seed(seed)
+        env.reset(seed = seed)
     # LOADING EXPERT/DEMO SAMPLES
     demo_trajs = np.load('expert_samples/pg_cartpole.npy', allow_pickle=True)
 else:
@@ -76,7 +80,7 @@ D_demo, D_samp = np.array([]), np.array([])
 
 D_demo = preprocess_traj(demo_trajs, D_demo, is_Demo=True)
 return_list, sum_of_cost_list = [], []
-for i in range(3000):
+for i in range(nIteraions):
     # t_max=50 in generate session in order to restrict steps per episode -
     # but won't help here because of random factor
     trajs = [policy.generate_session(env) for _ in range(EPISODES_TO_PLAY)]
@@ -153,7 +157,7 @@ for i in range(3000):
             probs * actions, dim=1)
     
         entropy = -torch.mean(torch.sum(probs*log_probs), dim = -1 )
-        loss_per_sample = -1 * (log_probs_for_actions*cumulative_returns + entropy * 1e-2)
+        loss_per_sample = -1 * (log_probs_for_actions*cumulative_returns - entropy * 1e-2)
         loss = torch.mean(loss_per_sample) + 1 
 
         # UPDATING THE POLICY NETWORK
@@ -181,6 +185,9 @@ for i in range(3000):
                 print(actions[ksl], rewards[ksl], costs[ksl], log_probs_for_actions[ksl].item(), loss_per_sample[ksl].item())
         # clear_output(True)
         print(f"Iter {i}: mean reward:{np.mean(return_list)} loss IOC: {loss_IOC} loss policy: {loss}")
+
+        if not os.path.exists('plots'):
+            os.makedirs('plots')
 
         plt.figure(figsize=[16, 12])
         plt.subplot(2, 2, 1)

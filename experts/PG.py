@@ -16,16 +16,21 @@ class PG(nn.Module):
             nn.ReLU(),
             nn.Linear(in_features = 64 , out_features = self.n_actions)
         )
-        self.optimizer = torch.optim.Adam(self.model.parameters(), 1e-3)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), 1e-3)
     def forward(self, x):
         logits = self.model(x)
         return logits
     
     def predict_probs(self, states):
+        # tmp = np.array([[states[0][0]]])
+        # print(tmp[0][0])
         states = torch.FloatTensor(states)
+        print("states is:")
+        print(states)
         logits = self.model(states).detach()
         probs = F.softmax(logits, dim = -1).numpy()
         # print(states, logits, probs)
+        print("Hello!")
         return probs
     
     def generate_session(self, env, t_max=1000):
@@ -33,9 +38,21 @@ class PG(nn.Module):
         s = env.reset()
         q_t = 1.0
         for t in range(t_max):
-            action_probs = self.predict_probs(np.array([s]))[0]
+            if t == 0:
+                s = s[0]
+            # tmp = s[0]
+            print("s is")
+            print(s)
+            action_probs = self.predict_probs(np.array([s]))
+            print("action prob is")
+            print(action_probs)
+            # print(action_probs[0].ndim)
+            # print(type(action_probs[0]))
+            action_probs = action_probs[0]
             a = np.random.choice(self.n_actions,  p = action_probs)
-            new_s, r, done, info = env.step(a)
+            # result = env.step(a)
+            # print(result)
+            new_s, r, done, info, _ = env.step(a)
             
             q_t *= action_probs[a]
 
